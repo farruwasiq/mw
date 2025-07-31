@@ -28,6 +28,10 @@ jobs:
           # Get the current workflow run ID
           RUN_ID="${{ github.run_id }}"
           # Create a simple description for the run
+          # IMPORTANT: For the 'end' workflow to find this 'start' run,
+          # ensure the display title explicitly contains "start".
+          # You might need to manually edit the workflow run's title in the UI,
+          # or add logic here to customize it based on inputs.
           RUN_DESCRIPTION="Workflow started at $(date)"
 
           # Output these values so they can be used by subsequent steps or for artifact naming
@@ -43,6 +47,7 @@ jobs:
         uses: actions/upload-artifact@v4 # Use the official GitHub action to upload artifacts
         with:
           # IMPORTANT CHANGE: Name the artifact to explicitly include "start"
+          # This is crucial for the 'end' workflow to identify it reliably.
           name: run-details-start-${{ steps.generate_details.outputs.run_id }}
           # Specify the path to the file(s) to upload
           path: run_details.txt
@@ -63,10 +68,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup GitHub CLI
-        # UPDATED STEP: Using actions/setup-gh@v2 for better compatibility
-        uses: actions/setup-gh@v2
-        with:
-          version: latest # Ensure the latest version is installed
+        # MANUAL INSTALLATION OF GITHUB CLI
+        run: |
+          echo "Manually installing GitHub CLI..."
+          type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && sudo apt update \
+          && sudo apt install gh -y
+          gh --version
 
       - name: Authenticate GitHub CLI
         env:
@@ -75,44 +86,46 @@ jobs:
           echo "Authenticating GitHub CLI..."
           gh auth setup-git # Configures Git to use gh for credential management
 
-      - name: Find Latest Successful 'start' Run's Artifact (By Name)
-        id: find_artifact # Assign an ID to this step to store its output
+      - name: Find Latest Successful 'start' Run (by Display Title)
+        id: find_run # Assign an ID to this step to store its output
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Ensure GH_TOKEN is available for gh commands
         run: |
-          echo "Searching for the latest 'run-details-start' artifact..."
-          # List all artifacts, filter by name starting with 'run-details-start-',
-          # and get the name and runId of the most recent one.
-          # gh artifact list by default lists artifacts from most recent run first.
-          ARTIFACT_INFO=$(gh artifact list --json name,runId | jq -r '.[] | select(.name | startsWith("run-details-start-")) | .name + " " + (.runId | tostring)' | head -n 1)
+          echo "Searching for the latest successful 'start' run by display title..."
+          # Use gh run list to find the latest successful workflow_dispatch run
+          # whose display title contains "start".
+          # This relies on the 'start' workflow setting a descriptive display title.
+          LATEST_START_RUN_ID=$(gh run list \
+            --workflow "JSM MW" \
+            --event workflow_dispatch \
+            --status success \
+            --json databaseId,displayTitle \
+            --limit 100 | \
+            jq -r '.[] | select(.displayTitle | contains("start")) | .databaseId | tostring' | head -n 1)
 
-          if [ -z "$ARTIFACT_INFO" ]; then
-            echo "::error::No 'run-details-start' artifacts found in this repository. Ensure a 'start' workflow has run successfully and uploaded its artifact."
-            exit 1 # Exit with an error if no artifact is found
+          if [ -z "$LATEST_START_RUN_ID" ]; then
+            echo "::error::No successful 'start' runs (with 'start' in display title) found for this workflow."
+            echo "Please ensure a 'start' workflow has run successfully and its display title contains 'start'."
+            exit 1 # Exit with an error if no suitable run is found
           fi
 
-          # Extract the artifact name and run ID from the found info
-          ARTIFACT_NAME=$(echo "$ARTIFACT_INFO" | awk '{print $1}')
-          ARTIFACT_RUN_ID=$(echo "$ARTIFACT_INFO" | awk '{print $2}')
-
-          echo "Found latest successful 'start' artifact: $ARTIFACT_NAME from run ID: $ARTIFACT_RUN_ID"
-          # Set the found artifact name and run ID as outputs of this step,
-          # so subsequent steps can use them.
-          echo "artifact_name_to_download=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
-          echo "run_id_to_download=$ARTIFACT_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "Found latest successful 'start' run ID: $LATEST_START_RUN_ID"
+          # Set the found run ID as an output of this step.
+          echo "run_id_to_download=$LATEST_START_RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Download Previous Run Details Artifact
         uses: actions/download-artifact@v4 # Use the official GitHub action to download artifacts
         with:
-          # Use the artifact name and run ID found in the previous step to download the correct artifact.
-          name: ${{ steps.find_artifact.outputs.artifact_name_to_download }}
-          run-id: ${{ steps.find_artifact.outputs.run_id_to_download }}
+          # Use the run ID found in the previous step.
+          run-id: ${{ steps.find_run.outputs.run_id_to_download }}
+          # The artifact name is expected to be 'run-details-start-<run_id>' as set by the 'start-workflow'.
+          name: run-details-start-${{ steps.find_run.outputs.run_id_to_download }}
           # Specify the path where the artifact should be downloaded
           path: downloaded_artifacts
 
       - name: Display Previous Run Details
         run: |
-          echo "--- Details of Previous Run (ID: ${{ steps.find_artifact.outputs.run_id_to_download }}) ---"
+          echo "--- Details of Previous Run (ID: ${{ steps.find_run.outputs.run_id_to_download }}) ---"
           # Display the content of the downloaded file
           cat downloaded_artifacts/run_details.txt
           echo "----------------------------------------------------"
