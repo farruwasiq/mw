@@ -93,7 +93,6 @@ jobs:
           set -eo pipefail # Exit immediately if any command in the pipe fails
 
           # First, get the workflow ID for "JSM MW"
-          # Using --jq to get the id directly is fine here.
           WORKFLOW_ID=$(gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | select(.name=="JSM MW") | .id')
 
           if [ -z "$WORKFLOW_ID" ]; then
@@ -102,13 +101,11 @@ jobs:
           fi
           echo "Found JSM MW Workflow ID: $WORKFLOW_ID"
 
-          # Fetch ALL workflow runs for this workflow ID.
-          # We'll select only the required fields using gh api --jq, then pipe to local jq for full filtering.
-          # The --jq for gh api here just flattens the array for easier local processing.
+          # Fetch ALL workflow runs for this workflow ID, outputting individual objects
           RAW_RUNS_JSON=$(gh api /repos/${{ github.repository }}/actions/workflows/$WORKFLOW_ID/runs \
             --jq '.workflow_runs[]' --paginate)
 
-          # --- DEBUGGING STEP (Optional, but recommended for next run) ---
+          # --- DEBUGGING STEP (Keep for one more run to confirm) ---
           echo "--- DEBUG: RAW RUNS JSON from gh api START ---"
           echo "$RAW_RUNS_JSON"
           echo "--- DEBUG: RAW RUNS JSON from gh api END ---"
@@ -116,8 +113,12 @@ jobs:
 
           # Now, pipe the raw run objects to local jq for the filtering
           LATEST_START_RUN_ID=$(echo "$RAW_RUNS_JSON" | \
-            jq -r 'select(.display_title | contains("JSM MW - start")) and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success" | .id | tostring' | head -n 1)
-
+            jq -r 'select(
+              (.display_title | contains("JSM MW - start")) and
+              (.event == "workflow_dispatch") and
+              (.status == "completed") and
+              (.conclusion == "success")
+            ) | .id | tostring' | head -n 1) # <-- FIXED JQ FILTER
 
           if [ -z "$LATEST_START_RUN_ID" ]; then
             echo "::error::No successful 'start' runs found with the expected criteria (displayTitle: 'JSM MW - start', event: 'workflow_dispatch', status: 'completed', conclusion: 'success')."
