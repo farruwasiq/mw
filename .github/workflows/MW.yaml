@@ -107,6 +107,11 @@ jobs:
           # Set the found run ID as an output of this step.
           echo "run_id_to_download=$LATEST_START_RUN_ID" >> "$GITHUB_OUTPUT"
 
+      - name: Wait for Artifact Availability (Optional)
+        run: |
+          echo "Waiting for 5 seconds to ensure artifact availability..."
+          sleep 5 # Add a small delay
+
       - name: Download Previous Run Details Artifact
         uses: actions/download-artifact@v4 # Use the official GitHub action to download artifacts
         with:
