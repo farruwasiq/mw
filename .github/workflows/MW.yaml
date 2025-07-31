@@ -91,17 +91,10 @@ jobs:
         run: |
           echo "Searching for the latest successful 'start' run using gh run list filters..."
 
-          # --- DEBUGGING STEP: Capture and print raw JSON output ---
-          RAW_GH_RUN_OUTPUT=$(gh run list \
+          LATEST_START_RUN_ID=$(gh run list \
             --workflow "JSM MW" \
             --json databaseId,displayTitle,event,status,conclusion \
-            --limit 100)
-          echo "--- RAW GH RUN LIST JSON OUTPUT START ---"
-          echo "$RAW_GH_RUN_OUTPUT"
-          echo "--- RAW GH RUN LIST JSON OUTPUT END ---"
-          # --------------------------------------------------------
-
-          LATEST_START_RUN_ID=$(echo "$RAW_GH_RUN_OUTPUT" | \
+            --limit 100 | \
             jq -r '.[] | select(.displayTitle | contains("JSM MW - start") and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .databaseId | tostring' | head -n 1)
 
           if [ -z "$LATEST_START_RUN_ID" ]; then
