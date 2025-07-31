@@ -1,4 +1,4 @@
-name: Manual Start/End Workflow
+ame: Manual Start/End Workflow
 
 on:
   workflow_dispatch:
@@ -59,6 +59,9 @@ jobs:
       contents: read # Needed for actions/download-artifact to read artifacts
 
     steps:
+      - name: Checkout repository # <<< ADDED THIS STEP
+        uses: actions/checkout@v4
+
       - name: Setup GitHub CLI
         run: |
           echo "Setting up GitHub CLI..."
