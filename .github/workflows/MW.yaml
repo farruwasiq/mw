@@ -91,11 +91,33 @@ jobs:
         run: |
           echo "Searching for the latest successful 'start' run using gh run list filters..."
 
-          LATEST_START_RUN_ID=$(gh run list \
+          # Capture the output, but explicitly try to filter out non-JSON lines
+          # We'll then echo this filtered output to jq
+          # Added a "set -x" for more verbose debugging output from the shell
+          set -x
+          GH_RUN_OUTPUT=$(gh run list \
             --workflow "JSM MW" \
             --json databaseId,displayTitle,event,status,conclusion \
-            --limit 100 | \
+            --limit 100 2>&1) # Redirect stderr to stdout to catch any gh errors/warnings
+
+          # Filter out lines that don't start with [ or { (typical JSON array/object start)
+          # This helps isolate potential non-JSON output from gh
+          CLEAN_JSON=$(echo "$GH_RUN_OUTPUT" | grep -E '^[\[\{]' | tr -d '\n') # Remove newlines to ensure single valid JSON string if truncated
+
+          echo "--- DEBUG: Cleaned JSON for jq START ---"
+          echo "$CLEAN_JSON"
+          echo "--- DEBUG: Cleaned JSON for jq END ---"
+
+          # Only proceed if CLEAN_JSON is not empty (i.e., we got some valid JSON looking data)
+          if [ -z "$CLEAN_JSON" ]; then
+            echo "::error::gh run list returned no valid JSON output. Full gh output was:"
+            echo "$GH_RUN_OUTPUT" # Print the original output for full context
+            exit 1
+          fi
+
+          LATEST_START_RUN_ID=$(echo "$CLEAN_JSON" | \
             jq -r '.[] | select(.displayTitle | contains("JSM MW - start") and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .databaseId | tostring' | head -n 1)
+          set +x # Turn off debug tracing
 
           if [ -z "$LATEST_START_RUN_ID" ]; then
             echo "::error::No successful 'start' runs found with the expected criteria (displayTitle: 'JSM MW - start', event: 'workflow_dispatch', status: 'completed', conclusion: 'success')."
@@ -104,7 +126,6 @@ jobs:
           fi
 
           echo "Found latest successful 'start' run ID: $LATEST_START_RUN_ID"
-          # Set the found run ID as an output of this step.
           echo "run_id_to_download=$LATEST_START_RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Wait for Artifact Availability (Optional)
