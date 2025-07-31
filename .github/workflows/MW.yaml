@@ -1,32 +1,67 @@
-name: GitHub CLI Example Workflow
+name: Manual Start/End Workflow
 
 on:
-  workflow_dispatch: # Allows you to manually trigger the workflow from the GitHub UI
-  push:
-    branches:
-      - main # Or any branch you want to trigger on push
+  workflow_dispatch:
+    inputs:
+      action_type:
+        description: 'Choose action: start or end'
+        required: true
+        type: choice
+        options:
+          - start
+          - end
+      # Removed run_id_to_download input as it will be found automatically for 'end' action
 
 jobs:
-  run-gh-commands:
-    runs-on: ubuntu-latest # Or your preferred runner environment
+  start-workflow:
+    # This job runs only if the 'action_type' input is 'start'
+    if: github.event.inputs.action_type == 'start'
+    runs-on: ubuntu-latest
 
     permissions:
-      contents: read # Needed to checkout the repository
-      issues: write # Needed if you want to create or modify issues
-      pull-requests: write # Needed if you want to create or modify pull requests
-      # Add other permissions as needed based on the gh commands you'll use
-    env: # <<< Set the GITHUB_TOKEN at the job level
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      contents: write # Needed for actions/upload-artifact to write to the repository's artifact storage
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Generate and Save Run Details
+        id: generate_details # Assign an ID to this step to reference its outputs
+        run: |
+          # Get the current workflow run ID
+          RUN_ID="${{ github.run_id }}"
+          # Create a simple description for the run
+          RUN_DESCRIPTION="Workflow started at $(date)"
 
+          # Output these values so they can be used by subsequent steps or for artifact naming
+          echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+          echo "run_description=${RUN_DESCRIPTION}" >> "$GITHUB_OUTPUT"
+
+          # Create a file with the run details
+          echo "Run ID: ${RUN_ID}" > run_details.txt
+          echo "Description: ${RUN_DESCRIPTION}" >> run_details.txt
+          echo "Artifact created for run ID: ${RUN_ID}"
+
+      - name: Upload Run Details Artifact
+        uses: actions/upload-artifact@v4 # Use the official GitHub action to upload artifacts
+        with:
+          # Name the artifact uniquely using the run ID from the previous step's output
+          name: run-details-${{ steps.generate_details.outputs.run_id }}
+          # Specify the path to the file(s) to upload
+          path: run_details.txt
+          # Set a retention period for the artifact (e.g., 1 day for this example)
+          retention-days: 1
+
+  end-workflow:
+    # This job runs only if the 'action_type' input is 'end'
+    if: github.event.inputs.action_type == 'end'
+    runs-on: ubuntu-latest
+
+    permissions:
+      actions: read # Needed for gh CLI to list workflow runs and for actions/download-artifact
+      contents: read # Needed for actions/download-artifact to read artifacts
+
+    steps:
       - name: Setup GitHub CLI
         run: |
           echo "Setting up GitHub CLI..."
-          # The GitHub CLI is usually pre-installed on GitHub-hosted runners.
-          # This step primarily ensures it's available and shows the version.
           gh --version
 
       - name: Authenticate GitHub CLI
@@ -35,28 +70,43 @@ jobs:
         run: |
           echo "Authenticating GitHub CLI..."
           gh auth setup-git # Configures Git to use gh for credential management
-          # You can also verify authentication with: gh auth status
 
-      - name: Get repository information
+      - name: Find Latest Successful Workflow Run ID
+        id: find_run_id # Assign an ID to this step to store its output
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Ensure GH_TOKEN is available for gh commands
         run: |
-          echo "Getting repository information..."
-          gh repo view --json name,description,url # Fetches repository name, description, and URL
+          echo "Searching for the latest successful run of this workflow..."
+          # Use gh run list to find the latest successful run of the current workflow.
+          # --workflow "${{ github.workflow }}" ensures we only look at runs of this specific workflow file.
+          # --status success filters for runs that completed successfully.
+          # --limit 1 gets only the most recent one.
+          # --json databaseId extracts the internal ID of the run.
+          # jq -r '.[0].databaseId' parses the JSON output to get the raw ID.
+          LATEST_RUN_ID=$(gh run list --workflow "${{ github.workflow }}" --status success --limit 1 --json databaseId | jq -r '.[0].databaseId')
 
-      - name: List issues
-        run: |
-          echo "Listing open issues..."
-          gh issue list --state open --limit 5 # Lists up to 5 open issues
+          if [ -z "$LATEST_RUN_ID" ]; then
+            echo "::error::No successful previous runs found for this workflow to download artifacts from."
+            exit 1 # Exit with an error if no run ID is found
+          fi
 
-      - name: Create a new issue (example)
-        # This step is conditional to avoid creating issues on every run
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          echo "Creating a new issue..."
-          gh issue create --title "Automated Issue from Workflow" --body "This issue was created automatically by a GitHub Actions workflow."
+          echo "Found latest successful run ID: $LATEST_RUN_ID"
+          # Set the found run ID as an output of this step, so subsequent steps can use it.
+          echo "run_id_to_download=$LATEST_RUN_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Get current workflow run details (example)
+      - name: Download Previous Run Details Artifact
+        uses: actions/download-artifact@v4 # Use the official GitHub action to download artifacts
+        with:
+          # Use the run ID found in the previous step to download the correct artifact.
+          run-id: ${{ steps.find_run_id.outputs.run_id_to_download }}
+          # Construct the artifact name dynamically using the found run ID.
+          name: run-details-${{ steps.find_run_id.outputs.run_id_to_download }}
+          # Specify the path where the artifact should be downloaded
+          path: downloaded_artifacts
+
+      - name: Display Previous Run Details
         run: |
-          echo "Current workflow run details:"
-          gh run view ${{ github.run_id }} --json status,conclusion # Shows status and conclusion of current run
+          echo "--- Details of Previous Run (ID: ${{ steps.find_run_id.outputs.run_id_to_download }}) ---"
+          # Display the content of the downloaded file
+          cat downloaded_artifacts/run_details.txt
+          echo "----------------------------------------------------"
