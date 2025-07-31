@@ -42,8 +42,8 @@ jobs:
       - name: Upload Run Details Artifact
         uses: actions/upload-artifact@v4 # Use the official GitHub action to upload artifacts
         with:
-          # Name the artifact uniquely using the run ID from the previous step's output
-          name: run-details-${{ steps.generate_details.outputs.run_id }}
+          # IMPORTANT CHANGE: Name the artifact to explicitly include "start"
+          name: run-details-start-${{ steps.generate_details.outputs.run_id }}
           # Specify the path to the file(s) to upload
           path: run_details.txt
           # Set a retention period for the artifact (e.g., 1 day for this example)
@@ -74,68 +74,31 @@ jobs:
           echo "Authenticating GitHub CLI..."
           gh auth setup-git # Configures Git to use gh for credential management
 
-      - name: Find Latest Successful 'start' Run's Artifact
+      - name: Find Latest Successful 'start' Run's Artifact (By Name)
         id: find_artifact # Assign an ID to this step to store its output
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Ensure GH_TOKEN is available for gh commands
         run: |
-          echo "Searching for the latest successful 'start' run's artifact..."
+          echo "Searching for the latest 'run-details-start' artifact..."
+          # List all artifacts, filter by name starting with 'run-details-start-',
+          # and get the name and runId of the most recent one.
+          # gh artifact list by default lists artifacts from most recent run first.
+          ARTIFACT_INFO=$(gh artifact list --json name,runId | jq -r '.[] | select(.name | startswith("run-details-start-")) | .name + " " + (.runId | tostring)' | head -n 1)
 
-          # Get a list of recent successful workflow_dispatch runs for this workflow
-          # Updated --workflow to use the new name "JSM MW"
-          RUN_IDS=$(gh run list \
-            --workflow "JSM MW" \
-            --event workflow_dispatch \
-            --status success \
-            --json databaseId \
-            --limit 100 | \
-            jq -r '.[].databaseId')
-
-          LATEST_START_RUN_ID=""
-          ARTIFACT_NAME_FOUND=""
-
-          # Iterate through the successful runs to find the most recent one that was a 'start' action
-          for run_id in $RUN_IDS; do
-            echo "Checking run ID: $run_id"
-            # Use gh api to get the full run details, which includes the event payload with inputs
-            RUN_DETAILS_FULL_API=$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}")
-
-            # --- DEBUGGING STEP: Print the full API Response for inspection ---
-            echo "--- Full API Response for Run ID $run_id ---"
-            echo "$RUN_DETAILS_FULL_API"
-            echo "----------------------------------------------"
-
-            # Corrected and made more robust:
-            # Extract action_type by first checking if .event exists and is a string,
-            # then parsing it with fromjson? (which handles null/invalid JSON gracefully),
-            # and finally accessing .inputs.action_type.
-            ACTION_TYPE=$(echo "$RUN_DETAILS_FULL_API" | jq -r '.event | (fromjson? | .inputs.action_type) // empty')
-            echo "Debug: Action Type for $run_id: $ACTION_TYPE"
-
-            if [ "$ACTION_TYPE" == "start" ]; then
-              echo "Found 'start' run: $run_id"
-              LATEST_START_RUN_ID="$run_id"
-              # Now, list artifacts specifically for this 'start' run
-              # Filter for artifacts whose name starts with 'run-details-'
-              ARTIFACT_INFO_FOR_RUN=$(gh artifact list --run-id "$run_id" --json name | jq -r '.[] | select(.name | startswith("run-details-")) | .name')
-
-              if [ -n "$ARTIFACT_INFO_FOR_RUN" ]; then
-                ARTIFACT_NAME_FOUND="$ARTIFACT_INFO_FOR_RUN"
-                break # Found the latest 'start' run with an artifact, so we can stop searching
-              fi
-            fi
-          done
-
-          if [ -z "$LATEST_START_RUN_ID" ] || [ -z "$ARTIFACT_NAME_FOUND" ]; then
-            echo "::error::No successful 'start' runs with 'run-details' artifacts found."
-            exit 1 # Exit with an error if no suitable run or artifact is found
+          if [ -z "$ARTIFACT_INFO" ]; then
+            echo "::error::No 'run-details-start' artifacts found in this repository. Ensure a 'start' workflow has run successfully and uploaded its artifact."
+            exit 1 # Exit with an error if no artifact is found
           fi
 
-          echo "Found latest successful 'start' artifact: $ARTIFACT_NAME_FOUND from run ID: $LATEST_START_RUN_ID"
+          # Extract the artifact name and run ID from the found info
+          ARTIFACT_NAME=$(echo "$ARTIFACT_INFO" | awk '{print $1}')
+          ARTIFACT_RUN_ID=$(echo "$ARTIFACT_INFO" | awk '{print $2}')
+
+          echo "Found latest successful 'start' artifact: $ARTIFACT_NAME from run ID: $ARTIFACT_RUN_ID"
           # Set the found artifact name and run ID as outputs of this step,
           # so subsequent steps can use them.
-          echo "artifact_name_to_download=$ARTIFACT_NAME_FOUND" >> "$GITHUB_OUTPUT"
-          echo "run_id_to_download=$LATEST_START_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "artifact_name_to_download=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+          echo "run_id_to_download=$ARTIFACT_RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Download Previous Run Details Artifact
         uses: actions/download-artifact@v4 # Use the official GitHub action to download artifacts
