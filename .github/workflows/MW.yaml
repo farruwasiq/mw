@@ -63,9 +63,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup GitHub CLI
-        run: |
-          echo "Setting up GitHub CLI..."
-          gh --version
+        # NEW STEP: Install the latest GitHub CLI
+        uses: cli/gh-cli@v2
+        with:
+          version: latest # Ensure the latest version is installed
 
       - name: Authenticate GitHub CLI
         env:
@@ -83,7 +84,7 @@ jobs:
           # List all artifacts, filter by name starting with 'run-details-start-',
           # and get the name and runId of the most recent one.
           # gh artifact list by default lists artifacts from most recent run first.
-          ARTIFACT_INFO=$(gh artifact list --json name,runId | jq -r '.[] | select(.name | startswith("run-details-start-")) | .name + " " + (.runId | tostring)' | head -n 1)
+          ARTIFACT_INFO=$(gh artifact list --json name,runId | jq -r '.[] | select(.name | startsWith("run-details-start-")) | .name + " " + (.runId | tostring)' | head -n 1)
 
           if [ -z "$ARTIFACT_INFO" ]; then
             echo "::error::No 'run-details-start' artifacts found in this repository. Ensure a 'start' workflow has run successfully and uploaded its artifact."
