@@ -98,7 +98,8 @@ jobs:
           LATEST_START_RUN_ID=$(gh run list \
             --workflow "JSM MW" \
             --event workflow_dispatch \
-            --status success \
+            --status completed \
+            --conclustion success \
             --json databaseId,displayTitle \
             --limit 100 | \
             jq -r '.[] | select(.displayTitle | contains("start")) | .databaseId | tostring' | head -n 1)
