@@ -92,12 +92,8 @@ jobs:
           echo "Searching for the latest successful 'start' run using gh run list filters..."
           set -eo pipefail # Exit immediately if any command in the pipe fails
 
-          # Use gh api to list runs directly, which tends to provide cleaner JSON.
-          # We'll filter on the server-side as much as possible, then use jq.
-          # Note: gh api run doesn't have a direct equivalent for --workflow name,
-          # so we'll fetch all runs for the repo and then filter by workflow_id and displayTitle.
-
           # First, get the workflow ID for "JSM MW"
+          # Using --jq to get the id directly is fine here.
           WORKFLOW_ID=$(gh api repos/${{ github.repository }}/actions/workflows --jq '.workflows[] | select(.name=="JSM MW") | .id')
 
           if [ -z "$WORKFLOW_ID" ]; then
@@ -106,10 +102,22 @@ jobs:
           fi
           echo "Found JSM MW Workflow ID: $WORKFLOW_ID"
 
-          # Now, fetch runs for that specific workflow ID and filter with jq
-          LATEST_START_RUN_ID=$(gh api /repos/${{ github.repository }}/actions/workflows/$WORKFLOW_ID/runs \
-            --jq '.workflow_runs[] | select(.display_title | contains("JSM MW - start") and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .id | tostring' \
-            --paginate | head -n 1) # --paginate handles more than 30 runs if necessary
+          # Fetch ALL workflow runs for this workflow ID.
+          # We'll select only the required fields using gh api --jq, then pipe to local jq for full filtering.
+          # The --jq for gh api here just flattens the array for easier local processing.
+          RAW_RUNS_JSON=$(gh api /repos/${{ github.repository }}/actions/workflows/$WORKFLOW_ID/runs \
+            --jq '.workflow_runs[]' --paginate)
+
+          # --- DEBUGGING STEP (Optional, but recommended for next run) ---
+          echo "--- DEBUG: RAW RUNS JSON from gh api START ---"
+          echo "$RAW_RUNS_JSON"
+          echo "--- DEBUG: RAW RUNS JSON from gh api END ---"
+          # ----------------------------------------------------------------
+
+          # Now, pipe the raw run objects to local jq for the filtering
+          LATEST_START_RUN_ID=$(echo "$RAW_RUNS_JSON" | \
+            jq -r 'select(.display_title | contains("JSM MW - start")) and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success" | .id | tostring' | head -n 1)
+
 
           if [ -z "$LATEST_START_RUN_ID" ]; then
             echo "::error::No successful 'start' runs found with the expected criteria (displayTitle: 'JSM MW - start', event: 'workflow_dispatch', status: 'completed', conclusion: 'success')."
