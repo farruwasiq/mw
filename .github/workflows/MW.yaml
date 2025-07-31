@@ -93,8 +93,14 @@ jobs:
             # Use gh api to get the full run details, which includes the event payload with inputs
             RUN_DETAILS_FULL_API=$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}")
 
-            # Corrected: Extract action_type directly from the top-level 'inputs' field
-            ACTION_TYPE=$(echo "$RUN_DETAILS_FULL_API" | jq -r '.inputs.action_type // empty')
+            # --- DEBUGGING STEP: Print the full API response for inspection ---
+            echo "--- Full API Response for Run ID $run_id ---"
+            echo "$RUN_DETAILS_FULL_API"
+            echo "----------------------------------------------"
+
+            # Corrected: Extract action_type from event.inputs.action_type
+            # This is the standard path for workflow_dispatch inputs in the API response.
+            ACTION_TYPE=$(echo "$RUN_DETAILS_FULL_API" | jq -r '.event.inputs.action_type // empty')
             echo "Debug: Action Type for $run_id: $ACTION_TYPE"
 
             if [ "$ACTION_TYPE" == "start" ]; then
