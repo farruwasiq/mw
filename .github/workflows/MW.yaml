@@ -151,14 +151,13 @@ jobs:
           echo "Listing artifacts for run ID $RUN_ID:"
           gh api /repos/${{ github.repository }}/actions/runs/$RUN_ID/artifacts --jq '.artifacts' || true # Continue on error if listing fails
 
-          # Download the artifact
-          # The 'gh run download' command requires the run ID and artifact name
-          # It downloads to the current directory by default, so we'll cd into the target path first
+          # Download the artifact - CORRECTED COMMAND
           mkdir -p "$DOWNLOAD_PATH" # Create the target directory if it doesn't exist
 
           (
             cd "$DOWNLOAD_PATH" # Change directory to where we want to download
-            gh run download "$ARTIFACT_NAME" --run-id "$RUN_ID" || {
+            # Corrected line: pass RUN_ID as a positional argument, and --name for the artifact
+            gh run download "$RUN_ID" --name "$ARTIFACT_NAME" || {
               echo "::error::Failed to download artifact '$ARTIFACT_NAME' from run ID '$RUN_ID' using gh CLI."
               exit 1
             }
