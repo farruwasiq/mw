@@ -59,7 +59,7 @@ jobs:
       contents: read # Needed for actions/download-artifact to read artifacts
 
     steps:
-      - name: Checkout repository # <<< ADDED THIS STEP
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup GitHub CLI
@@ -74,42 +74,65 @@ jobs:
           echo "Authenticating GitHub CLI..."
           gh auth setup-git # Configures Git to use gh for credential management
 
-      - name: Find Latest Successful Workflow Run ID
-        id: find_run_id # Assign an ID to this step to store its output
+      - name: Find Latest Successful 'start' Run's Artifact
+        id: find_artifact # Assign an ID to this step to store its output
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Ensure GH_TOKEN is available for gh commands
         run: |
-          echo "Searching for the latest successful run of this workflow..."
-          # Use gh run list to find the latest successful run of the current workflow.
-          # --workflow "${{ github.workflow }}" ensures we only look at runs of this specific workflow file.
-          # --status success filters for runs that completed successfully.
-          # --limit 1 gets only the most recent one.
-          # --json databaseId extracts the internal ID of the run.
-          # jq -r '.[0].databaseId' parses the JSON output to get the raw ID.
-          LATEST_RUN_ID=$(gh run list --workflow "${{ github.workflow }}" --status success --limit 1 --json databaseId | jq -r '.[0].databaseId')
+          echo "Searching for the latest successful 'start' run's artifact..."
 
-          if [ -z "$LATEST_RUN_ID" ]; then
-            echo "::error::No successful previous runs found for this workflow to download artifacts from."
-            exit 1 # Exit with an error if no run ID is found
+          # Get a list of recent successful runs for this workflow
+          # Limit to a reasonable number (e.g., 20) to find the latest 'start' run efficiently
+          RUN_IDS=$(gh run list --workflow "${{ github.workflow }}" --status success --limit 20 --json databaseId | jq -r '.[].databaseId')
+
+          LATEST_START_RUN_ID=""
+          ARTIFACT_NAME_FOUND=""
+
+          # Iterate through the successful runs to find the most recent one that was a 'start' action
+          for run_id in $RUN_IDS; do
+            echo "Checking run ID: $run_id"
+            # Get run details including event inputs
+            # The 'eventInputs' field is crucial for checking the 'action_type'
+            RUN_DETAILS=$(gh run view "$run_id" --json event,eventInputs)
+            ACTION_TYPE=$(echo "$RUN_DETAILS" | jq -r '.eventInputs.action_type // empty')
+
+            if [ "$ACTION_TYPE" == "start" ]; then
+              echo "Found 'start' run: $run_id"
+              LATEST_START_RUN_ID="$run_id"
+              # Now, list artifacts specifically for this 'start' run
+              # Filter for artifacts whose name starts with 'run-details-'
+              ARTIFACT_INFO_FOR_RUN=$(gh artifact list --run-id "$run_id" --json name | jq -r '.[] | select(.name | startswith("run-details-")) | .name')
+
+              if [ -n "$ARTIFACT_INFO_FOR_RUN" ]; then
+                ARTIFACT_NAME_FOUND="$ARTIFACT_INFO_FOR_RUN"
+                break # Found the latest 'start' run with an artifact, so we can stop searching
+              fi
+            fi
+          done
+
+          if [ -z "$LATEST_START_RUN_ID" ] || [ -z "$ARTIFACT_NAME_FOUND" ]; then
+            echo "::error::No successful 'start' runs with 'run-details' artifacts found."
+            exit 1 # Exit with an error if no suitable run or artifact is found
           fi
 
-          echo "Found latest successful run ID: $LATEST_RUN_ID"
-          # Set the found run ID as an output of this step, so subsequent steps can use it.
-          echo "run_id_to_download=$LATEST_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "Found latest successful 'start' artifact: $ARTIFACT_NAME_FOUND from run ID: $LATEST_START_RUN_ID"
+          # Set the found artifact name and run ID as outputs of this step,
+          # so subsequent steps can use them.
+          echo "artifact_name_to_download=$ARTIFACT_NAME_FOUND" >> "$GITHUB_OUTPUT"
+          echo "run_id_to_download=$LATEST_START_RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Download Previous Run Details Artifact
         uses: actions/download-artifact@v4 # Use the official GitHub action to download artifacts
         with:
-          # Use the run ID found in the previous step to download the correct artifact.
-          run-id: ${{ steps.find_run_id.outputs.run_id_to_download }}
-          # Construct the artifact name dynamically using the found run ID.
-          name: run-details-${{ steps.find_run_id.outputs.run_id_to_download }}
+          # Use the artifact name and run ID found in the previous step to download the correct artifact.
+          name: ${{ steps.find_artifact.outputs.artifact_name_to_download }}
+          run-id: ${{ steps.find_artifact.outputs.run_id_to_download }}
           # Specify the path where the artifact should be downloaded
           path: downloaded_artifacts
 
       - name: Display Previous Run Details
         run: |
-          echo "--- Details of Previous Run (ID: ${{ steps.find_run_id.outputs.run_id_to_download }}) ---"
+          echo "--- Details of Previous Run (ID: ${{ steps.find_artifact.outputs.run_id_to_download }}) ---"
           # Display the content of the downloaded file
           cat downloaded_artifacts/run_details.txt
           echo "----------------------------------------------------"
