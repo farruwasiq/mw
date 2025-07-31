@@ -15,6 +15,8 @@ jobs:
       issues: write # Needed if you want to create or modify issues
       pull-requests: write # Needed if you want to create or modify pull requests
       # Add other permissions as needed based on the gh commands you'll use
+    env: # <<< Set the GITHUB_TOKEN at the job level
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout repository
