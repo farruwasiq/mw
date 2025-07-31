@@ -95,9 +95,17 @@ jobs:
             # The event payload is directly accessible under the 'event' field as a JSON object
             RUN_DETAILS_FULL_API=$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}")
 
-            # Extract action_type from event.inputs.action_type.
-            # Use // empty to handle cases where 'event' or 'inputs' or 'action_type' might be missing.
-            ACTION_TYPE=$(echo "$RUN_DETAILS_FULL_API" | jq -r '.event.inputs.action_type // empty')
+            # Extract action_type from event.inputs.action_type using a more robust jq expression.
+            # This checks if 'event' is an object and if 'inputs' within 'event' is an object
+            # before attempting to access 'action_type'.
+            ACTION_TYPE=$(echo "$RUN_DETAILS_FULL_API" | jq -r '
+              .event |
+              if type == "object" and .inputs | type == "object" then
+                .inputs.action_type // empty
+              else
+                empty
+              end
+            ')
 
             if [ "$ACTION_TYPE" == "start" ]; then
               echo "Found 'start' run: $run_id"
