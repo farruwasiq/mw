@@ -92,9 +92,9 @@ jobs:
           for run_id in $RUN_IDS; do
             echo "Checking run ID: $run_id"
             # Get run details including event inputs
-            # The 'eventInputs' field is crucial for checking the 'action_type'
-            RUN_DETAILS=$(gh run view "$run_id" --json event,eventInputs)
-            ACTION_TYPE=$(echo "$RUN_DETAILS" | jq -r '.eventInputs.action_type // empty')
+            # The 'event' field contains the full event payload, including inputs for workflow_dispatch
+            RUN_DETAILS=$(gh run view "$run_id" --json event) # Only request 'event' field
+            ACTION_TYPE=$(echo "$RUN_DETAILS" | jq -r '.event.inputs.action_type // empty') # Corrected jq path
 
             if [ "$ACTION_TYPE" == "start" ]; then
               echo "Found 'start' run: $run_id"
