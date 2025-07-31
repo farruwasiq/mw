@@ -63,8 +63,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup GitHub CLI
-        # UPDATED STEP: Use actions/setup-gh to install the latest GitHub CLI
-        uses: actions/setup-gh@v1
+        # UPDATED STEP: Using actions/setup-gh@v2 for better compatibility
+        uses: actions/setup-gh@v2
         with:
           version: latest # Ensure the latest version is installed
 
