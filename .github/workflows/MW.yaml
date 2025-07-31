@@ -99,7 +99,7 @@ jobs:
             --workflow "JSM MW" \
             --event workflow_dispatch \
             --status completed \
-            --conclustion success \
+            --conclusion success \
             --json databaseId,displayTitle \
             --limit 100 | \
             jq -r '.[] | select(.displayTitle | contains("start")) | .databaseId | tostring' | head -n 1)
