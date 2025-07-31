@@ -36,6 +36,8 @@ jobs:
           # You can also verify authentication with: gh auth status
 
       - name: Get repository information
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Getting repository information..."
           gh repo view --json name,description,url # Fetches repository name, description, and URL
