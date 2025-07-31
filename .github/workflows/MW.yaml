@@ -134,19 +134,40 @@ jobs:
           echo "Waiting for 5 seconds to ensure artifact availability..."
           sleep 5 # Add a small delay
 
-      - name: Download Previous Run Details Artifact
-        uses: actions/download-artifact@v4 # Use the official GitHub action to download artifacts
-        with:
-          # Use the run ID found in the previous step.
-          run-id: ${{ steps.find_run.outputs.run_id_to_download }}
-          # The artifact name is expected to be 'run-details-start-<run_id>' as set by the 'start-workflow'.
-          name: run-details-start-${{ steps.find_run.outputs.run_id_to_download }}
-          # Specify the path where the artifact should be downloaded
-          path: downloaded_artifacts
+      - name: Download Previous Run Details Artifact (using gh CLI)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eo pipefail # Ensure script exits on error
+
+          RUN_ID="${{ steps.find_run.outputs.run_id_to_download }}"
+          ARTIFACT_NAME="run-details-start-${RUN_ID}"
+          DOWNLOAD_PATH="downloaded_artifacts" # This is the directory it will download into
+
+          echo "Attempting to download artifact '$ARTIFACT_NAME' from run ID '$RUN_ID' using gh CLI..."
+          echo "GH_TOKEN length: ${#GH_TOKEN}" # Debugging: Check if token is present
+
+          # List artifacts for debugging (optional, but helpful if it fails)
+          echo "Listing artifacts for run ID $RUN_ID:"
+          gh api /repos/${{ github.repository }}/actions/runs/$RUN_ID/artifacts --jq '.artifacts' || true # Continue on error if listing fails
+
+          # Download the artifact
+          # The 'gh run download' command requires the run ID and artifact name
+          # It downloads to the current directory by default, so we'll cd into the target path first
+          mkdir -p "$DOWNLOAD_PATH" # Create the target directory if it doesn't exist
+
+          (
+            cd "$DOWNLOAD_PATH" # Change directory to where we want to download
+            gh run download "$ARTIFACT_NAME" --run-id "$RUN_ID" || {
+              echo "::error::Failed to download artifact '$ARTIFACT_NAME' from run ID '$RUN_ID' using gh CLI."
+              exit 1
+            }
+          )
+          echo "Artifact '$ARTIFACT_NAME' downloaded successfully to '$DOWNLOAD_PATH'!"
 
       - name: Display Previous Run Details
         run: |
           echo "--- Details of Previous Run (ID: ${{ steps.find_run.outputs.run_id_to_download }}) ---"
           # Display the content of the downloaded file
-          cat downloaded_artifacts/run_details.txt
+          cat downloaded_artifacts/run_details.txt # Path must match the download location
           echo "----------------------------------------------------"
