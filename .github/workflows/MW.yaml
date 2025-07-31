@@ -28,10 +28,6 @@ jobs:
           # Get the current workflow run ID
           RUN_ID="${{ github.run_id }}"
           # Create a simple description for the run
-          # IMPORTANT: For the 'end' workflow to find this 'start' run,
-          # ensure the display title explicitly contains "start".
-          # You might need to manually edit the workflow run's title in the UI,
-          # or add logic here to customize it based on inputs.
           RUN_DESCRIPTION="Workflow started at $(date)"
 
           # Output these values so they can be used by subsequent steps or for artifact naming
@@ -86,27 +82,24 @@ jobs:
           echo "Authenticating GitHub CLI..."
           gh auth setup-git # Configures Git to use gh for credential management
 
-      - name: Find Latest Successful 'start' Run (by Display Title)
+      - name: Find Latest Successful 'start' Run (by `gh run list` filter)
         id: find_run # Assign an ID to this step to store its output
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Ensure GH_TOKEN is available for gh commands
         run: |
-          echo "Searching for the latest successful 'start' run by display title..."
-          # Use gh run list to find the latest successful workflow_dispatch run
-          # whose display title contains "start".
-          # This relies on the 'start' workflow setting a descriptive display title.
+          echo "Searching for the latest successful 'start' run using gh run list filters..."
+          # Use the exact gh run list command and jq filter that you found works reliably.
+          # This filters for runs of the specific workflow, triggered by workflow_dispatch,
+          # that have completed successfully and have the display title "JSM MW".
           LATEST_START_RUN_ID=$(gh run list \
             --workflow "JSM MW" \
-            --event workflow_dispatch \
-            --status completed \
-            --conclusion success \
-            --json databaseId,displayTitle \
+            --json databaseId,displayTitle,event,status,conclusion \
             --limit 100 | \
-            jq -r '.[] | select(.displayTitle | contains("start")) | .databaseId | tostring' | head -n 1)
+            jq -r '.[] | select(.displayTitle == "JSM MW" and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .databaseId | tostring' | head -n 1)
 
           if [ -z "$LATEST_START_RUN_ID" ]; then
-            echo "::error::No successful 'start' runs (with 'start' in display title) found for this workflow."
-            echo "Please ensure a 'start' workflow has run successfully and its display title contains 'start'."
+            echo "::error::No successful 'start' runs found with the expected criteria (displayTitle: 'JSM MW', event: 'workflow_dispatch', status: 'completed', conclusion: 'success')."
+            echo "Please ensure a 'start' workflow has run successfully with these characteristics."
             exit 1 # Exit with an error if no suitable run is found
           fi
 
