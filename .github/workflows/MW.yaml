@@ -91,23 +91,13 @@ jobs:
           # Iterate through the successful runs to find the most recent one that was a 'start' action
           for run_id in $RUN_IDS; do
             echo "Checking run ID: $run_id"
-            # Get run details including event payload.
-            # The 'event' field contains the full event payload as a JSON string.
-            # Extract the 'event' string, handling potential null/empty cases
-            EVENT_PAYLOAD_STRING=$(gh run view "$run_id" --json event | jq -r '.event // empty')
+            # Use gh api to get the full run details, which includes the event payload with inputs
+            # The event payload is directly accessible under the 'event' field as a JSON object
+            RUN_DETAILS_FULL_API=$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}")
 
-            ACTION_TYPE=""
-            if [ -n "$EVENT_PAYLOAD_STRING" ]; then
-              # Attempt to parse the event payload string into JSON and extract action_type
-              # Redirect stderr to /dev/null to suppress jq errors for malformed JSON,
-              # and check the exit code ($?) to determine if parsing was successful.
-              PARSED_ACTION_TYPE=$(echo "$EVENT_PAYLOAD_STRING" | jq -r '.inputs.action_type // empty' 2>/dev/null)
-              if [ $? -eq 0 ]; then # Check if jq command was successful (exit code 0)
-                ACTION_TYPE="$PARSED_ACTION_TYPE"
-              else
-                echo "Warning: Failed to parse event payload for run ID $run_id. Payload might be malformed JSON or empty."
-              fi
-            fi
+            # Extract action_type from event.inputs.action_type.
+            # Use // empty to handle cases where 'event' or 'inputs' or 'action_type' might be missing.
+            ACTION_TYPE=$(echo "$RUN_DETAILS_FULL_API" | jq -r '.event.inputs.action_type // empty')
 
             if [ "$ACTION_TYPE" == "start" ]; then
               echo "Found 'start' run: $run_id"
