@@ -81,37 +81,54 @@ jobs:
         run: |
           echo "Searching for the latest successful 'start' run's artifact..."
 
-          # Use gh run list to find the latest successful workflow_dispatch run
-          # that has 'start' in its display title.
-          # The displayTitle often includes the workflow_dispatch inputs.
-          # This avoids complex parsing of the 'event' field.
-          LATEST_START_RUN_INFO=$(gh run list \
-            --workflow "${{ github.workflow }}" \
+          # Get a list of recent successful workflow_dispatch runs for this workflow
+          # Updated --workflow to use the new name "JSM MW"
+          RUN_IDS=$(gh run list \
+            --workflow "JSM MW" \
             --event workflow_dispatch \
             --status success \
-            --json databaseId,displayTitle \
+            --json databaseId \
             --limit 100 | \
-            jq -r '.[] | select(.displayTitle | contains("JSM")) | .databaseId | tostring' | head -n 1)
+            jq -r '.[].databaseId')
 
-          LATEST_START_RUN_ID="$LATEST_START_RUN_INFO"
+          LATEST_START_RUN_ID=""
           ARTIFACT_NAME_FOUND=""
 
-          if [ -z "$LATEST_START_RUN_ID" ]; then
-            echo "::error::No successful 'start' runs (with 'start' in display title) found for this workflow."
-            exit 1 # Exit with an error if no suitable run is found
-          fi
+          # Iterate through the successful runs to find the most recent one that was a 'start' action
+          for run_id in $RUN_IDS; do
+            echo "Checking run ID: $run_id"
+            # Use gh api to get the full run details, which includes the event payload with inputs
+            RUN_DETAILS_FULL_API=$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}")
 
-          echo "Found latest 'start' run ID: $LATEST_START_RUN_ID"
+            # --- DEBUGGING STEP: Print the full API Response for inspection ---
+            echo "--- Full API Response for Run ID $run_id ---"
+            echo "$RUN_DETAILS_FULL_API"
+            echo "----------------------------------------------"
 
-          # Now, list artifacts specifically for this 'start' run
-          # Filter for artifacts whose name starts with 'run-details-'
-          ARTIFACT_INFO_FOR_RUN=$(gh artifact list --run-id "$LATEST_START_RUN_ID" --json name | jq -r '.[] | select(.name | startswith("run-details-")) | .name')
+            # Corrected and made more robust:
+            # Extract action_type by first checking if .event exists and is a string,
+            # then parsing it with fromjson? (which handles null/invalid JSON gracefully),
+            # and finally accessing .inputs.action_type.
+            ACTION_TYPE=$(echo "$RUN_DETAILS_FULL_API" | jq -r '.event | (fromjson? | .inputs.action_type) // empty')
+            echo "Debug: Action Type for $run_id: $ACTION_TYPE"
 
-          if [ -n "$ARTIFACT_INFO_FOR_RUN" ]; then
-            ARTIFACT_NAME_FOUND="$ARTIFACT_INFO_FOR_RUN"
-          else
-            echo "::error::No 'run-details' artifact found for run ID: $LATEST_START_RUN_ID"
-            exit 1 # Exit with an error if no artifact is found for the identified run
+            if [ "$ACTION_TYPE" == "start" ]; then
+              echo "Found 'start' run: $run_id"
+              LATEST_START_RUN_ID="$run_id"
+              # Now, list artifacts specifically for this 'start' run
+              # Filter for artifacts whose name starts with 'run-details-'
+              ARTIFACT_INFO_FOR_RUN=$(gh artifact list --run-id "$run_id" --json name | jq -r '.[] | select(.name | startswith("run-details-")) | .name')
+
+              if [ -n "$ARTIFACT_INFO_FOR_RUN" ]; then
+                ARTIFACT_NAME_FOUND="$ARTIFACT_INFO_FOR_RUN"
+                break # Found the latest 'start' run with an artifact, so we can stop searching
+              fi
+            fi
+          done
+
+          if [ -z "$LATEST_START_RUN_ID" ] || [ -z "$ARTIFACT_NAME_FOUND" ]; then
+            echo "::error::No successful 'start' runs with 'run-details' artifacts found."
+            exit 1 # Exit with an error if no suitable run or artifact is found
           fi
 
           echo "Found latest successful 'start' artifact: $ARTIFACT_NAME_FOUND from run ID: $LATEST_START_RUN_ID"
