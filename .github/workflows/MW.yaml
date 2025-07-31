@@ -1,4 +1,4 @@
-ame: Manual Start/End Workflow
+name: Manual Start/End Workflow
 
 on:
   workflow_dispatch:
