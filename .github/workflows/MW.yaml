@@ -1,0 +1,58 @@
+name: GitHub CLI Example Workflow
+
+on:
+  workflow_dispatch: # Allows you to manually trigger the workflow from the GitHub UI
+  push:
+    branches:
+      - main # Or any branch you want to trigger on push
+
+jobs:
+  run-gh-commands:
+    runs-on: ubuntu-latest # Or your preferred runner environment
+
+    permissions:
+      contents: read # Needed to checkout the repository
+      issues: write # Needed if you want to create or modify issues
+      pull-requests: write # Needed if you want to create or modify pull requests
+      # Add other permissions as needed based on the gh commands you'll use
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup GitHub CLI
+        run: |
+          echo "Setting up GitHub CLI..."
+          # The GitHub CLI is usually pre-installed on GitHub-hosted runners.
+          # This step primarily ensures it's available and shows the version.
+          gh --version
+
+      - name: Authenticate GitHub CLI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use the built-in GITHUB_TOKEN for authentication
+        run: |
+          echo "Authenticating GitHub CLI..."
+          gh auth setup-git # Configures Git to use gh for credential management
+          # You can also verify authentication with: gh auth status
+
+      - name: Get repository information
+        run: |
+          echo "Getting repository information..."
+          gh repo view --json name,description,url # Fetches repository name, description, and URL
+
+      - name: List issues
+        run: |
+          echo "Listing open issues..."
+          gh issue list --state open --limit 5 # Lists up to 5 open issues
+
+      - name: Create a new issue (example)
+        # This step is conditional to avoid creating issues on every run
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "Creating a new issue..."
+          gh issue create --title "Automated Issue from Workflow" --body "This issue was created automatically by a GitHub Actions workflow."
+
+      - name: Get current workflow run details (example)
+        run: |
+          echo "Current workflow run details:"
+          gh run view ${{ github.run_id }} --json status,conclusion # Shows status and conclusion of current run
