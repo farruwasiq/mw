@@ -1,4 +1,4 @@
-name: Manual Start/End Workflow
+name: JSM MW
 
 on:
   workflow_dispatch:
@@ -91,7 +91,7 @@ jobs:
             --status success \
             --json databaseId,displayTitle \
             --limit 100 | \
-            jq -r '.[] | select(.displayTitle | contains("start")) | .databaseId | tostring' | head -n 1)
+            jq -r '.[] | select(.displayTitle | contains("JSM")) | .databaseId | tostring' | head -n 1)
 
           LATEST_START_RUN_ID="$LATEST_START_RUN_INFO"
           ARTIFACT_NAME_FOUND=""
