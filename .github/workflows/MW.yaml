@@ -1,4 +1,6 @@
-name: JSM MW
+name: JSM MW # This is your static workflow's display name
+
+run-name: ${{ github.workflow }} - ${{ github.event.inputs.action_type }} # <-- CORRECT PLACEMENT
 
 on:
   workflow_dispatch:
@@ -88,17 +90,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Ensure GH_TOKEN is available for gh commands
         run: |
           echo "Searching for the latest successful 'start' run using gh run list filters..."
-          # Use the exact gh run list command and jq filter that you found works reliably.
-          # This filters for runs of the specific workflow, triggered by workflow_dispatch,
-          # that have completed successfully and have the display title "JSM MW".
+          # Update the jq filter to look for the new displayTitle
           LATEST_START_RUN_ID=$(gh run list \
             --workflow "JSM MW" \
             --json databaseId,displayTitle,event,status,conclusion \
             --limit 100 | \
-            jq -r '.[] | select(.displayTitle == "JSM MW" and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .databaseId | tostring' | head -n 1)
+            jq -r '.[] | select(.displayTitle | contains("JSM MW - start") and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .databaseId | tostring' | head -n 1)
 
           if [ -z "$LATEST_START_RUN_ID" ]; then
-            echo "::error::No successful 'start' runs found with the expected criteria (displayTitle: 'JSM MW', event: 'workflow_dispatch', status: 'completed', conclusion: 'success')."
+            echo "::error::No successful 'start' runs found with the expected criteria (displayTitle: 'JSM MW - start', event: 'workflow_dispatch', status: 'completed', conclusion: 'success')."
             echo "Please ensure a 'start' workflow has run successfully with these characteristics."
             exit 1 # Exit with an error if no suitable run is found
           fi
