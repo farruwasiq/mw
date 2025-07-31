@@ -93,9 +93,21 @@ jobs:
             echo "Checking run ID: $run_id"
             # Get run details including event payload.
             # The 'event' field contains the full event payload as a JSON string.
-            RUN_DETAILS_JSON=$(gh run view "$run_id" --json event)
-            # Corrected jq path: parse the 'event' string into JSON using fromjson, then access 'inputs.action_type'
-            ACTION_TYPE=$(echo "$RUN_DETAILS_JSON" | jq -r '.event | fromjson.inputs.action_type // empty')
+            # Extract the 'event' string, handling potential null/empty cases
+            EVENT_PAYLOAD_STRING=$(gh run view "$run_id" --json event | jq -r '.event // empty')
+
+            ACTION_TYPE=""
+            if [ -n "$EVENT_PAYLOAD_STRING" ]; then
+              # Attempt to parse the event payload string into JSON and extract action_type
+              # Redirect stderr to /dev/null to suppress jq errors for malformed JSON,
+              # and check the exit code ($?) to determine if parsing was successful.
+              PARSED_ACTION_TYPE=$(echo "$EVENT_PAYLOAD_STRING" | jq -r '.inputs.action_type // empty' 2>/dev/null)
+              if [ $? -eq 0 ]; then # Check if jq command was successful (exit code 0)
+                ACTION_TYPE="$PARSED_ACTION_TYPE"
+              else
+                echo "Warning: Failed to parse event payload for run ID $run_id. Payload might be malformed JSON or empty."
+              fi
+            fi
 
             if [ "$ACTION_TYPE" == "start" ]; then
               echo "Found 'start' run: $run_id"
