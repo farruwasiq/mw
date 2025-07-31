@@ -91,10 +91,11 @@ jobs:
           # Iterate through the successful runs to find the most recent one that was a 'start' action
           for run_id in $RUN_IDS; do
             echo "Checking run ID: $run_id"
-            # Get run details including event inputs
-            # The 'event' field contains the full event payload, including inputs for workflow_dispatch
-            RUN_DETAILS=$(gh run view "$run_id" --json event) # Only request 'event' field
-            ACTION_TYPE=$(echo "$RUN_DETAILS" | jq -r '.event.inputs.action_type // empty') # Corrected jq path
+            # Get run details including event payload.
+            # The 'event' field contains the full event payload as a JSON string.
+            RUN_DETAILS_JSON=$(gh run view "$run_id" --json event)
+            # Corrected jq path: parse the 'event' string into JSON using fromjson, then access 'inputs.action_type'
+            ACTION_TYPE=$(echo "$RUN_DETAILS_JSON" | jq -r '.event | fromjson.inputs.action_type // empty')
 
             if [ "$ACTION_TYPE" == "start" ]; then
               echo "Found 'start' run: $run_id"
