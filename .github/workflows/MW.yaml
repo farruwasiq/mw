@@ -82,7 +82,8 @@ jobs:
           echo "Searching for the latest successful 'start' run's artifact..."
 
           # Get a list of recent successful runs for this workflow, filtered by event type
-          RUN_IDS=$(gh run list --workflow "${{ github.workflow }}" --event workflow_dispatch --status success --limit 50 --json databaseId | jq -r '.[].databaseId')
+          # Fixed typo: "workflow_dispatch"
+          RUN_IDS=$(gh run list --workflow "${{ github.workflow }}" --event workflow_dispatch --status success --limit 100 --json databaseId | jq -r '.[].databaseId')
 
           LATEST_START_RUN_ID=""
           ARTIFACT_NAME_FOUND=""
@@ -94,8 +95,18 @@ jobs:
             # The event payload is directly accessible under the 'event' field as a JSON object
             RUN_DETAILS_FULL_API=$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}")
 
-            # Corrected: Extract action_type directly from the top-level 'inputs' field
-            ACTION_TYPE=$(echo "$RUN_DETAILS_FULL_API" | jq -r '.inputs.action_type // empty')
+            # Corrected and made more robust:
+            # Extract action_type by first checking if .event exists and is a string,
+            # then parsing it with fromjson? (which handles null/invalid JSON gracefully),
+            # and finally accessing .inputs.action_type.
+            ACTION_TYPE=$(echo "$RUN_DETAILS_FULL_API" | jq -r '
+              .event |
+              if type == "string" then
+                fromjson? | .inputs.action_type // empty
+              else
+                empty
+              end
+            ')
             echo "Debug: Action Type for $run_id: $ACTION_TYPE"
 
             if [ "$ACTION_TYPE" == "start" ]; then
